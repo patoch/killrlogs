@@ -23,6 +23,6 @@ mergeStrategy in assembly := {
 
 }
 
-mainClass in assembly := Some("com.datastax.demo.killrlogs.KillrLogsStreamingApp")
+//mainClass in assembly := Some("com.datastax.demo.killrlogs.IngestionStreamingApp")
 
 assemblyJarName in assembly := "killrlogs-streaming.jar"

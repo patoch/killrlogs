@@ -1,7 +1,5 @@
 package com.datastax.demo.killrlogs
 
-import java.text.SimpleDateFormat
-import java.util.{UUID, Date}
 
 import com.datastax.driver.core.utils.UUIDs
 import com.datastax.spark.connector.SomeColumns
@@ -10,20 +8,21 @@ import org.apache.spark.streaming.kafka.KafkaUtils
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 import org.apache.spark.{SparkConf, SparkContext}
 import com.datastax.spark.connector.streaming._
-
+import TimeUtils._
 
 /**
  * Created by Patrick on 19/10/15.
  */
 // dse spark-submit killrlogs-streaming.jar --deploy-mode cluster --supervise
+//dse spark-submit --class com.datastax.demo.killrlogs.IngestionStreamingApp killrlogs-streaming.jar
 
-object KillrLogsStreamingApp extends App {
 
+object IngestionStreamingApp extends App {
 
+  val cassandraContactPoints = Some(sys.env("CASSANDRA_CONTACT_POINTS")).getOrElse("127.0.0.1")
   val sparkMaster = Some(sys.env("SPARK_MASTER")).getOrElse("spark://127.0.0.1:7077")
   val sparkExecutorMemory = Some(sys.env("kl_executor_memory")).getOrElse("1g")
   val sparkCores = Some(sys.env("kl_cores")).getOrElse("3")
-  val cassandraContactPoints = Some(sys.env("CASSANDRA_CONTACT_POINTS")).getOrElse("127.0.0.1")
 
   val group = "log.streaming.g1"
   val checkpointDir = "/killrlogs/job1/checkpoint"
@@ -33,20 +32,18 @@ object KillrLogsStreamingApp extends App {
 
   val batchIntervalInSeconds = 10
 
-  override def main(args:Array[String]) = {
-    // create spark configuration
-    val conf = new SparkConf(true)
-      .setAppName(getClass.getSimpleName)
-      .setMaster(sparkMaster)
-      .set("spark.executor.memory", sparkExecutorMemory)
-      .set("spark.cores.max", sparkCores)
-      .set("spark.cassandra.connection.host", cassandraContactPoints)
+  // create spark configuration
+  val conf = new SparkConf(true)
+    .setAppName(getClass.getSimpleName)
+    .setMaster(sparkMaster)
+    .set("spark.executor.memory", sparkExecutorMemory)
+    .set("spark.cores.max", sparkCores)
+    .set("spark.cassandra.connection.host", cassandraContactPoints)
 
-    // create streaming context and streams and start
-    val ssc =   StreamingContext.getOrCreate(checkpointDir, () => {createStreamingContext(conf)})
-    ssc.start()
-    ssc.awaitTermination()
-  }
+  // create streaming context and streams and start
+  val ssc =   StreamingContext.getOrCreate(checkpointDir, () => {createStreamingContext(conf)})
+  ssc.start()
+  ssc.awaitTermination()
 
 
   def createStreamingContext(conf: SparkConf) = {
@@ -80,20 +77,4 @@ object KillrLogsStreamingApp extends App {
     ssc
   }
 
-
-  // helpers
-  def getBucketTsFrom(datetime: String, bucketSizeInMinutes: Int): Date = {
-    val format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss:SSS")
-    getBucketTsFrom(format.parse(datetime), bucketSizeInMinutes)
-  }
-
-  def getBucketTsFrom(datetime: Date, bucketSizeInMinutes: Int): Date = {
-    val ts = datetime.getTime()
-    new Date(ts - (ts % (bucketSizeInMinutes * 60 * 1000)))
-  }
-
-  def getTsFrom(datetime: String): Date = {
-    new SimpleDateFormat("yyyy-MM-dd HH:mm:ss:SSS").parse(datetime)
-  }
-  
 }

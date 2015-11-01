@@ -26,3 +26,13 @@ CREATE TABLE IF NOT EXISTS counters (
  count INT,
  PRIMARY KEY ((source_id, serie_id, bucket_ts),  ts, id)
 );
+
+
+CREATE TABLE IF NOT EXISTS counter_rollups1h (
+ source_id TIMEUUID,
+ serie_id TEXT,
+ bucket_ts TIMESTAMP,
+ ts TIMESTAMP,
+ count INT,
+ PRIMARY KEY ((source_id, serie_id, bucket_ts),  ts)
+);
