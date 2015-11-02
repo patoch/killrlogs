@@ -1,7 +1,6 @@
 package com.datastax.demo.killrlogs
 
 
-import com.datastax.driver.core.utils.UUIDs
 import com.datastax.spark.connector.SomeColumns
 import kafka.serializer.StringDecoder
 import org.apache.spark.streaming.kafka.{HasOffsetRanges, OffsetRange, KafkaUtils}
@@ -70,7 +69,7 @@ object IngestionStreamingApp extends App {
       rdd
     }.foreachRDD { rdd =>
       for (o <- offsetRanges) {
-        offsets  = "${o.partition}-${o.fromOffset}-${o.untilOffset}"
+        offsets  = s"${o.partition}-${o.fromOffset}-${o.untilOffset}"
         println(s"Offsets:  ${o.fromOffset} - ${o.untilOffset} (topic ${o.topic}, partition ${o.partition})")
       }
     }
