@@ -4,7 +4,7 @@ package com.datastax.demo.killrlogs
 import com.datastax.driver.core.utils.UUIDs
 import com.datastax.spark.connector.SomeColumns
 import kafka.serializer.StringDecoder
-import org.apache.spark.streaming.kafka.KafkaUtils
+import org.apache.spark.streaming.kafka.{HasOffsetRanges, OffsetRange, KafkaUtils}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 import org.apache.spark.{SparkConf, SparkContext}
 import com.datastax.spark.connector.streaming._
@@ -30,7 +30,7 @@ object IngestionStreamingApp extends App {
   val brokers = Some(sys.env("kl_brokers")).getOrElse("127.0.0.1:9092")
   val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers)
 
-  val batchIntervalInSeconds = 10
+  val batchIntervalInSeconds = 60
 
   // create spark configuration
   val conf = new SparkConf(true)
@@ -50,26 +50,42 @@ object IngestionStreamingApp extends App {
     val sc = new SparkContext(conf)
     val ssc = new StreamingContext(sc, Seconds(batchIntervalInSeconds))
     val stream = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder](ssc, kafkaParams, topicsSet)
-    ssc.checkpoint(checkpointDir)
+
     // for statefull rdd transfortmation, checkpoint every 5 to 10 time the batch interval
     //stream.checkpoint(Seconds(10 * batchIntervalInSeconds))
 
-    val logs = stream // 5 second buckets
+    ssc.checkpoint(checkpointDir)
+
+    val logs = stream // 60 second buckets
       .map(_._2.split(";"))
-      .map( x => (x(0), x(1), getBucketTsFrom(x(2), 5), getTsFrom(x(2)), x(3), x(4)))
+      .map( x => (x(0), x(1), getBucketTsFrom(x(2), 60), getTsFrom(x(2)), x(3), x(4)))
       .cache()
+
+    // find current batch interval Kafka offsets
+    var offsetRanges = List[OffsetRange]()
+    var offsets = ""
+
+    stream.transform { rdd =>
+      offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges.toList
+      rdd
+    }.foreachRDD { rdd =>
+      for (o <- offsetRanges) {
+        offsets  = "${o.partition}-${o.fromOffset}-${o.untilOffset}"
+        println(s"Offsets:  ${o.fromOffset} - ${o.untilOffset} (topic ${o.topic}, partition ${o.partition})")
+      }
+    }
 
     // TODO: filter malformed logs out
 
 
     logs.saveToCassandra("killrlog_ks", "logs", SomeColumns("id", "source_id", "bucket_ts", "ts", "type", "raw"))
 
-    val logs_kv = logs // 1 day bucket, interval 5s
-      .map(x => ((x._2, x._5, getBucketTsFrom(x._3, 1440)), (1, x._4)))
+    val logs_kv = logs // 1 hour bucket, interval 60s
+      .map(x => ((x._2, x._5, getBucketTsFrom(x._3, 3600)), (1, x._4)))
       // k(source, type, bucket_ts) v(1, date)
       .reduceByKey((x, y) => (x._1 + y._1, x._2))
       // k(source, type, bucket_ts) v(count, date)
-      .map(x => (x._1._1, x._1._2, x._1._3, x._2._2, UUIDs.random(), x._2._1))
+      .map(x => (x._1._1, x._1._2, x._1._3, x._2._2, offsets, x._2._1))
 
     logs_kv.print()
     logs_kv.saveToCassandra("killrlog_ks", "counters", SomeColumns("source_id", "serie_id", "bucket_ts",  "ts", "id", "count"))

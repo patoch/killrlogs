@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS counters (
  serie_id TEXT,
  bucket_ts TIMESTAMP,
  ts TIMESTAMP,
- id UUID,
+ id TEXT,
  count INT,
  PRIMARY KEY ((source_id, serie_id, bucket_ts),  ts, id)
 );
