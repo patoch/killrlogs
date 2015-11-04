@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS logs (
  raw TEXT,
  PRIMARY KEY ((source_id, bucket_ts),  ts, id)
 )
-WITH default_time_to_live = 26780400;
+WITH default_time_to_live = 26780400
+AND CLUSTERING ORDER BY (ts DESC);
 
 
 -- raw counters, calculated in batch intervals
@@ -47,7 +48,8 @@ CREATE TABLE IF NOT EXISTS counters (
  id TEXT,
  count INT,
  PRIMARY KEY ((source_id, serie_id, bucket_ts),  ts, id)
-);
+)
+WITH CLUSTERING ORDER BY (ts DESC);
 
 
 -- 1 day partition
@@ -59,7 +61,8 @@ CREATE TABLE IF NOT EXISTS counter_rollups_1h (
  ts TIMESTAMP,
  count INT,
  PRIMARY KEY ((source_id, serie_id, bucket_ts),  ts)
-);
+)
+WITH CLUSTERING ORDER BY (ts DESC);
 
 
 -- 1 month partitions
@@ -71,7 +74,9 @@ CREATE TABLE IF NOT EXISTS counter_rollups_1d (
  ts TIMESTAMP,
  count INT,
  PRIMARY KEY ((source_id, serie_id, bucket_ts),  ts)
-);
+)
+WITH CLUSTERING ORDER BY (ts DESC;
+
 
 -- 1 year partitions
 -- 12 cells per partition
@@ -82,4 +87,5 @@ CREATE TABLE IF NOT EXISTS counter_rollups_1m (
  ts TIMESTAMP,
  count INT,
  PRIMARY KEY ((source_id, serie_id, bucket_ts),  ts)
-);
+)
+WITH CLUSTERING ORDER BY (ts DESC;

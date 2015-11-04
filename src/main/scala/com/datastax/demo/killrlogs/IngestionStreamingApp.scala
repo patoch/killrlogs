@@ -77,15 +77,15 @@ object IngestionStreamingApp extends App {
     
     logs.saveToCassandra("killrlog_ks", "logs", SomeColumns("id", "source_id", "bucket_ts", "ts", "type", "raw"))
 
-    val logs_kv = logs // 1 hour bucket, interval 60s
+    val counters = logs // 1 hour bucket, interval 60s
       .map(x => ((x._2, x._5, getMinuteBucketTsFrom(x._3, 3600)), (1, x._4)))
       // k(source, type, bucket_ts) v(1, date)
       .reduceByKey((x, y) => (x._1 + y._1, x._2))
       // k(source, type, bucket_ts) v(count, date)
       .map(x => (x._1._1, x._1._2, x._1._3, x._2._2, offsets, x._2._1))
 
-    logs_kv.print()
-    logs_kv.saveToCassandra("killrlog_ks", "counters", SomeColumns("source_id", "serie_id", "bucket_ts",  "ts", "id", "count"))
+    counters.print()
+    counters.saveToCassandra("killrlog_ks", "counters", SomeColumns("source_id", "serie_id", "bucket_ts",  "ts", "id", "count"))
 
     ssc
   }

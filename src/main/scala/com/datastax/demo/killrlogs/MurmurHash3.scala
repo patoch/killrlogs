@@ -1,6 +1,6 @@
 package com.datastax.demo.killrlogs
 
-import java.lang.Integer.{ rotateLeft => rotl }
+import java.lang.Integer.{rotateLeft => rotl}
 
 /**
  * An implementation of Austin Appleby's MurmurHash 3 algorithm
@@ -14,8 +14,8 @@ import java.lang.Integer.{ rotateLeft => rotl }
  * be used instead, which is slightly faster. Finally finalizeHash needs to
  * be called to compute the final hash value.
  *
- * This is based on the earlier MurmurHash3 code by Rex Kerr, but the
- * MurmurHash3 algorithm was since changed by its creator Austin Appleby
+ * This is based on the earlier com.datastax.demo.killrlogs.MurmurHash3 code by Rex Kerr, but the
+ * com.datastax.demo.killrlogs.MurmurHash3 algorithm was since changed by its creator Austin Appleby
  * to remedy some weaknesses and improve performance. This represents the
  * latest and supposedly final version of the algortihm (revision 136).
  *
@@ -171,7 +171,7 @@ class MurmurHash3 {
 }
 
 /**
- * An instance of MurmurHash3 with predefined seeds for various
+ * An instance of com.datastax.demo.killrlogs.MurmurHash3 with predefined seeds for various
  * classes.  Used by all the scala collections and case classes.
  */
 object MurmurHash3 extends MurmurHash3 {

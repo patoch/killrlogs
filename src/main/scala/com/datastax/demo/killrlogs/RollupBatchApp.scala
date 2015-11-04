@@ -22,8 +22,9 @@ object RollupBatchApp extends App {
   val sparkExecutorMemory = Some(sys.env("kl_rollups_executor_memory")).getOrElse("1g")
   val sparkCores = Some(sys.env("kl_rollups_cores")).getOrElse("3")
 
+  // Rollup workload partitioning
   val partitionCount = 1 // number of partitions, basically number of analytical data centers
-  val ownedPartition = 1
+  val ownedPartition = 0
 
   // Create spark configuration
   val conf = new SparkConf(true)
@@ -46,7 +47,7 @@ object RollupBatchApp extends App {
   // Rollup hours since last rollup
   val counters = getRawCounterRDD()
 
-  val r = counters
+  counters
     // 1.1:source, 1.2:serie, 1.3:hourly_bucket, 2 count
     .map((x)=>((x._1._1, x._1._2, x._1._3), x._2))
     .reduceByKey(_+_)
@@ -56,7 +57,7 @@ object RollupBatchApp extends App {
 
   // Rollup days on hourly rollups
   val counterRollup1h = getHourlyCounterRDD()
-  counterRollup1h.collect().foreach(println)
+
   counterRollup1h.map((x)=>((x._1._1, x._1._2, x._1._3), x._2))
     .reduceByKey(_+_)
     .map(x => (x._1._1, x._1._2, getMonthBucketTsFrom(getTsFrom(x._1._3), 60 * 24), x._1._3, x._2))
