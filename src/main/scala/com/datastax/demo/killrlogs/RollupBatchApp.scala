@@ -103,7 +103,9 @@ object RollupBatchApp extends App {
     for (sourceId <- sourceIds) {
       for (serieId <- serieIds) {
         for (bucketTs <- bucketTss) {
-          partitionKeys = partitionKeys :+ (sourceId, serieId, bucketTs)
+          if (isPartitionOwner((sourceId, serieId, bucketTs))) {
+            partitionKeys = partitionKeys :+(sourceId, serieId, bucketTs)
+          }
         }
       }
     }
@@ -137,7 +139,9 @@ object RollupBatchApp extends App {
     for (sourceId <- sourceIds) {
       for (serieId <- serieIds) {
         for (bucketTs <- bucketTss) {
-          partitionKeys = partitionKeys :+ (sourceId, serieId, bucketTs)
+          if (isPartitionOwner((sourceId, serieId, bucketTs))) {
+            partitionKeys = partitionKeys :+(sourceId, serieId, bucketTs)
+          }
         }
       }
     }
@@ -205,12 +209,7 @@ object RollupBatchApp extends App {
 
   // Returns true if this node is assigned this partition
   def isPartitionOwner(key:(String,String,String)) = {
-    if (partitionCount == 1) {
-      true
-    }
-
-    val partition = MurmurHash3.stringHash(s"$key._1:$key._2:$key._3") % partitionCount
-    partition == ownedPartition
+    ownedPartition == MurmurHash3.stringHash(s"$key._1:$key._2:$key._3") % partitionCount
   }
 
 
