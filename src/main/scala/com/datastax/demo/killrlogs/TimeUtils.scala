@@ -9,18 +9,28 @@ import java.util.Date
  */
 object TimeUtils {
 
-  def getBucketTsFrom(datetime: String, bucketSizeInMinutes: Int): Date = {
-    val format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss:SSS")
-    getBucketTsFrom(format.parse(datetime), bucketSizeInMinutes)
+  val formatTmp = "yyyy-MM-dd HH:mm:ssZ"
+
+  def getMinuteBucketTsFrom(datetime: String, bucketSizeInMinutes: Int): Date = {
+    val format = new SimpleDateFormat(formatTmp)
+    getMinuteBucketTsFrom(format.parse(datetime), bucketSizeInMinutes)
   }
 
-  def getBucketTsFrom(datetime: Date, bucketSizeInMinutes: Int): Date = {
+  def getMinuteBucketTsFrom(datetime: Date, bucketSizeInMinutes: Int): Date = {
     val ts = datetime.getTime()
-    new Date(ts - (ts % (bucketSizeInMinutes * 60 * 1000)))
+    new Date(ts - (ts % (bucketSizeInMinutes * 60000)))
   }
 
   def getTsFrom(datetime: String): Date = {
-    new SimpleDateFormat("yyyy-MM-dd HH:mm:ss:SSS").parse(datetime)
+    new SimpleDateFormat(formatTmp).parse(datetime)
+  }
+
+  def formatDate(datetime:Date):String = {
+    new SimpleDateFormat(formatTmp).format(datetime)
+  }
+
+  def formatDate(datetime:Date, formatTmp: String):String = {
+    new SimpleDateFormat(formatTmp).format(datetime)
   }
 
 }

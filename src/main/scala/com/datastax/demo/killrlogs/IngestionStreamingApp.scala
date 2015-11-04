@@ -13,7 +13,7 @@ import TimeUtils._
  * Created by Patrick on 19/10/15.
  */
 // dse spark-submit killrlogs-streaming.jar --deploy-mode cluster --supervise
-//dse spark-submit --class com.datastax.demo.killrlogs.IngestionStreamingApp killrlogs-streaming.jar
+// dse spark-submit --class com.datastax.demo.killrlogs.IngestionStreamingApp killrlogs-streaming.jar
 
 
 object IngestionStreamingApp extends App {
@@ -50,15 +50,8 @@ object IngestionStreamingApp extends App {
     val ssc = new StreamingContext(sc, Seconds(batchIntervalInSeconds))
     val stream = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder](ssc, kafkaParams, topicsSet)
 
-    // for statefull rdd transfortmation, checkpoint every 5 to 10 time the batch interval
-    //stream.checkpoint(Seconds(10 * batchIntervalInSeconds))
-
+    // Set metadata checkpointing on
     ssc.checkpoint(checkpointDir)
-
-    val logs = stream // 60 second buckets
-      .map(_._2.split(";"))
-      .map( x => (x(0), x(1), getBucketTsFrom(x(2), 60), getTsFrom(x(2)), x(3), x(4)))
-      .cache()
 
     // find current batch interval Kafka offsets
     var offsetRanges = List[OffsetRange]()
@@ -74,13 +67,18 @@ object IngestionStreamingApp extends App {
       }
     }
 
+    // Aggregate logs in 60 seconds buckets
+    val logs = stream
+      .map(_._2.split(";"))
+      .map( x => (x(0), x(1), getMinuteBucketTsFrom(x(2), 60), getMinuteBucketTsFrom(x(2), 1), x(3), x(4)))
+      .cache()
+
     // TODO: filter malformed logs out
-
-
+    
     logs.saveToCassandra("killrlog_ks", "logs", SomeColumns("id", "source_id", "bucket_ts", "ts", "type", "raw"))
 
     val logs_kv = logs // 1 hour bucket, interval 60s
-      .map(x => ((x._2, x._5, getBucketTsFrom(x._3, 3600)), (1, x._4)))
+      .map(x => ((x._2, x._5, getMinuteBucketTsFrom(x._3, 3600)), (1, x._4)))
       // k(source, type, bucket_ts) v(1, date)
       .reduceByKey((x, y) => (x._1 + y._1, x._2))
       // k(source, type, bucket_ts) v(count, date)
