@@ -22,6 +22,9 @@ object RollupBatchApp extends App {
   val sparkExecutorMemory = Some(sys.env("kl_rollups_executor_memory")).getOrElse("1g")
   val sparkCores = Some(sys.env("kl_rollups_cores")).getOrElse("3")
 
+  val partitionCount = 1 // number of partitions, basically number of analytical data centers
+  val ownedPartition = 1
+
   // Create spark configuration
   val conf = new SparkConf(true)
     .setAppName(getClass.getSimpleName)
@@ -202,8 +205,12 @@ object RollupBatchApp extends App {
 
   // Returns true if this node is assigned this partition
   def isPartitionOwner(key:(String,String,String)) = {
-    val k = s"$key._1:$key._2:$key._3"
-    false
+    if (partitionCount == 1) {
+      true
+    }
+
+    val partition = MurmurHash3.stringHash(s"$key._1:$key._2:$key._3") % partitionCount
+    partition == ownedPartition
   }
 
 
