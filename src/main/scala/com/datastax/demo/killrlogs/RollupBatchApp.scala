@@ -22,7 +22,7 @@ object RollupBatchApp extends App {
   val sparkExecutorMemory = Some(sys.env("kl_rollups_executor_memory")).getOrElse("1g")
   val sparkCores = Some(sys.env("kl_rollups_cores")).getOrElse("3")
 
-  // create spark configuration
+  // Create spark configuration
   val conf = new SparkConf(true)
     .setAppName(getClass.getSimpleName)
     .setMaster(sparkMaster)
@@ -32,25 +32,17 @@ object RollupBatchApp extends App {
 
   val sc = new SparkContext(conf)
 
-  // ----------- rollup hours since last rollup
-  val lastRollupTs = getMinuteBucketTsFrom("2015-11-03 11:00:00+0000", 60)
-  println(s"Rolling up from $lastRollupTs")
+  // Pickup from last rollup
+  val lastRollupTs = getLastRollupTs()
+  println(s"[ ROLLING UP COUNTERS SINCE $lastRollupTs ]")
 
+  // Fetch some reference data
+  val sourceIds = getSourceIds()
+  val serieIds = getLogTypes()
 
-  /* ALTERNATIVE WITH FULL SCAN
-
-  val counters = sc.cassandraTable[(UUID, String, Date, Int)]("killrlog_ks", "counters")
-    .select("source_id", "serie_id", "ts", "count")
-    .where("ts >= ?", lastRollupTs)
-
-  counters.map(x => ((x._1, x._2, getMinuteBucketTsFrom(x._3, 60)), (x._3, x._4)))
-    .reduceByKey((x, y) => (x._1, x._2 + y._2))
-    .map(x => (x._1._1, x._1._2, getMinuteBucketTsFrom(x._1._3, 60 * 24), x._1._3, x._2._2))
-    .saveToCassandra("killrlog_ks", "counter_rollups_1h", SomeColumns("source_id", "serie_id", "bucket_ts", "ts", "count"))
-
-  */
-
+  // Rollup hours since last rollup
   val counters = getRawCounterRDD()
+
 
   // 1.1:source, 1.2:serie, 1.3:hourly_bucket, 2 count
   val r = counters
@@ -60,16 +52,35 @@ object RollupBatchApp extends App {
     .saveToCassandra("killrlog_ks", "counter_rollups_1h", SomeColumns("source_id", "serie_id", "bucket_ts", "ts", "count"))
 
 
-  // return an rdd of raw hourly counters
+  // Rollup days on hourly rollups
+
+
+  // Store rollup ts
+  setLastRollupTs()
+
+  // ----------------------- THE END
+
+
+  // Returns an rdd of raw hourly counters to be summed up
+  // Partition keys are generated as sourceIds x serieIds x buckets
+  // The RDD is repartitioned by cassandra replica and a local join is made to fetch the data
   def getRawCounterRDD() = {
 
-    var sourceIds = ArrayBuffer[String]()//Array("9d6e4330-8203-11e5-9c43-cf678cff6bd8", "e98a40c0-824e-11e5-9813-cf678cff6bd8")
-    var serieIds = ArrayBuffer[String]()//Array("view_category", "search", "buy_product", "like_product", "view_product")
+    /* ALTERNATIVE WITH FULL SCAN
+
+    val counters = sc.cassandraTable[(UUID, String, Date, Int)]("killrlog_ks", "counters")
+      .select("source_id", "serie_id", "ts", "count")
+      .where("ts >= ?", lastRollupTs)
+
+    counters.map(x => ((x._1, x._2, getMinuteBucketTsFrom(x._3, 60)), (x._3, x._4)))
+      .reduceByKey((x, y) => (x._1, x._2 + y._2))
+      .map(x => (x._1._1, x._1._2, getMinuteBucketTsFrom(x._1._3, 60 * 24), x._1._3, x._2._2))
+      .saveToCassandra("killrlog_ks", "counter_rollups_1h", SomeColumns("source_id", "serie_id", "bucket_ts", "ts", "count"))
+
+    */
+
+    // List buckets to be fetched
     var bucketTss = ArrayBuffer[String]()
-
-    val sources = sc.cassandraTable[String]("killrlogs_ks", "reference").select("name").where("id='logtypes")
-    val logtypes = sc.cassandraTable[String]("killrlogs_ks", "reference").select("name").where("id='logtypes'")
-
 
     val currentTime = new Date(System.currentTimeMillis)
     val cal:Calendar = Calendar.getInstance()
@@ -90,19 +101,65 @@ object RollupBatchApp extends App {
       }
     }
 
-    //val partitionKeys = Seq((UUID.fromString("9d6e4330-8203-11e5-9c43-cf678cff6bd8"), "search", getTsFrom("2015-11-03 12:00:00:000")))
-
     val partitionCount = partitionKeys.size
     println(s"$partitionCount partitions selected for level 1 rollup")
 
-    val rdd = sc.parallelize(partitionKeys)
+    sc.parallelize(partitionKeys)
       .repartitionByCassandraReplica("killrlog_ks","counters")
       .joinWithCassandraTable[Int]("killrlog_ks", "counters", SomeColumns("count"))
       .on(SomeColumns("source_id", "serie_id", "bucket_ts"))
 
-    println(rdd.count() + " partitions found.")
+  }
 
-    rdd
+
+  // Returns last rollup timestamp
+  // If none is stored, goes 24 hours
+  // If one is stored, would return it one hour before, to rollup counters that may have arrived since then.
+  // Returned time is aligned on an hour, so that rollups can be made several time in a given hour
+  def getLastRollupTs() = {
+    CassandraConnector(conf).withSessionDo { session =>
+      val lastRollupIter = session.execute("SELECT blobAsTimestamp(value) AS ts FROM killrlog_ks.references WHERE key='rollups' AND name='lastRollupTs';").iterator()
+      if (!lastRollupIter.hasNext) {
+        val cal: Calendar = Calendar.getInstance()
+        cal.add(Calendar.HOUR, -24)
+        getMinuteBucketTsFrom(cal.getTime, 60)
+      } else {
+        val cal: Calendar = Calendar.getInstance()
+        cal.setTime(lastRollupIter.next().getDate("ts"))
+        cal.add(Calendar.HOUR, -1)
+        getMinuteBucketTsFrom(cal.getTime, 60)
+      }
+    }
+  }
+
+
+  def setLastRollupTs() = {
+    CassandraConnector(conf).withSessionDo { session =>
+      val ts = formatDate(new Date())
+      session.execute(s"INSERT INTO killrlog_ks.references(key, name, value) VALUES ('rollups', 'lastRollupTs', timestampAsBlob('$ts'));")
+    }
+  }
+
+  def getSourceIds() = {
+    var sourceIds = ArrayBuffer[String]()
+    CassandraConnector(conf).withSessionDo { session =>
+      val sourcesIter = session.execute("SELECT name FROM killrlog_ks.references WHERE key='sources';").iterator()
+      while (sourcesIter.hasNext()) {
+        sourceIds += sourcesIter.next().getString("name")
+      }
+    }
+    sourceIds
+  }
+
+  def getLogTypes() = {
+    var logtypes = ArrayBuffer[String]()
+    CassandraConnector(conf).withSessionDo { session =>
+      val logtypesIter = session.execute("SELECT name FROM killrlog_ks.references WHERE key='logtypes';").iterator()
+      while (logtypesIter.hasNext()) {
+        logtypes += logtypesIter.next().getString("name")
+      }
+    }
+    logtypes
   }
 
 }

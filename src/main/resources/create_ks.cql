@@ -20,6 +20,7 @@ INSERT INTO references(key, name) VALUES ('logtypes', 'buy_product');
 INSERT INTO references(key, name) VALUES ('logtypes', 'like_product');
 INSERT INTO references(key, name) VALUES ('logtypes', 'view_product');
 
+
 -- logs
 CREATE TABLE IF NOT EXISTS logs (
  source_id TIMEUUID,
