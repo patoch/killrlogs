@@ -43,9 +43,8 @@ object RollupBatchApp extends App {
   // Rollup hours since last rollup
   val counters = getRawCounterRDD()
 
-
-  // 1.1:source, 1.2:serie, 1.3:hourly_bucket, 2 count
   val r = counters
+    // 1.1:source, 1.2:serie, 1.3:hourly_bucket, 2 count
     .map((x)=>((x._1._1, x._1._2, x._1._3), x._2))
     .reduceByKey(_+_)
     .map(x => (x._1._1, x._1._2, getMinuteBucketTsFrom(x._1._3, 60 * 24), x._1._3, x._2))
@@ -53,7 +52,12 @@ object RollupBatchApp extends App {
 
 
   // Rollup days on hourly rollups
-
+  val counterRollup1h = getHourlyCounterRDD()
+  counterRollup1h.collect().foreach(println)
+  counterRollup1h.map((x)=>((x._1._1, x._1._2, x._1._3), x._2))
+    .reduceByKey(_+_)
+    .map(x => (x._1._1, x._1._2, getMonthBucketTsFrom(getTsFrom(x._1._3), 60 * 24), x._1._3, x._2))
+    .saveToCassandra("killrlog_ks", "counter_rollups_1d", SomeColumns("source_id", "serie_id", "bucket_ts", "ts", "count"))
 
   // Store rollup ts
   setLastRollupTs()
@@ -87,8 +91,8 @@ object RollupBatchApp extends App {
     cal.setTime(lastRollupTs)
 
     while (cal.getTime.compareTo(currentTime) < 0) {
-      cal.add(Calendar.HOUR, 1)
       bucketTss += formatDate(cal.getTime)
+      cal.add(Calendar.HOUR, 1)
     }
 
     // create an array of partition keys as tuples, which are all combinations of sources, series and buckets
@@ -102,7 +106,7 @@ object RollupBatchApp extends App {
     }
 
     val partitionCount = partitionKeys.size
-    println(s"$partitionCount partitions selected for level 1 rollup")
+    println(s"Level 1 rollups: $partitionCount partitions")
 
     sc.parallelize(partitionKeys)
       .repartitionByCassandraReplica("killrlog_ks","counters")
@@ -111,6 +115,39 @@ object RollupBatchApp extends App {
 
   }
 
+
+  def getHourlyCounterRDD() = {
+
+    var bucketTss = ArrayBuffer[String]()
+
+    val currentTime = new Date(System.currentTimeMillis)
+    val cal:Calendar = Calendar.getInstance()
+    cal.setTime(getDayBefore(getMinuteBucketTsFrom(lastRollupTs, 24 * 60)))
+
+    while (cal.getTime.compareTo(currentTime) < 0) {
+      bucketTss += formatDate(cal.getTime)
+      cal.add(Calendar.HOUR, 24)
+    }
+
+    // create an array of partition keys as tuples, which are all combinations of sources, series and buckets
+    var partitionKeys = Seq[(String, String, String)]()
+    for (sourceId <- sourceIds) {
+      for (serieId <- serieIds) {
+        for (bucketTs <- bucketTss) {
+          partitionKeys = partitionKeys :+ (sourceId, serieId, bucketTs)
+        }
+      }
+    }
+
+    val partitionCount = partitionKeys.size
+    println(s"Level 2 rollups: $partitionCount partitions")
+
+    sc.parallelize(partitionKeys)
+      .repartitionByCassandraReplica("killrlog_ks","counter_rollups_1h")
+      .joinWithCassandraTable[Int]("killrlog_ks", "counter_rollups_1h", SomeColumns("count"))
+      .on(SomeColumns("source_id", "serie_id", "bucket_ts"))
+
+  }
 
   // Returns last rollup timestamp
   // If none is stored, goes 24 hours
@@ -132,13 +169,14 @@ object RollupBatchApp extends App {
     }
   }
 
-
+  // Store the last rollup ts to C*
   def setLastRollupTs() = {
     CassandraConnector(conf).withSessionDo { session =>
       val ts = formatDate(new Date())
       session.execute(s"INSERT INTO killrlog_ks.references(key, name, value) VALUES ('rollups', 'lastRollupTs', timestampAsBlob('$ts'));")
     }
   }
+
 
   def getSourceIds() = {
     var sourceIds = ArrayBuffer[String]()
@@ -161,5 +199,12 @@ object RollupBatchApp extends App {
     }
     logtypes
   }
+
+  // Returns true if this node is assigned this partition
+  def isPartitionOwner(key:(String,String,String)) = {
+    val k = s"$key._1:$key._2:$key._3"
+    false
+  }
+
 
 }

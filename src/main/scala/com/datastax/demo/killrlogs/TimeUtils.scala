@@ -1,7 +1,7 @@
 package com.datastax.demo.killrlogs
 
 import java.text.SimpleDateFormat
-import java.util.Date
+import java.util.{Calendar, Date}
 
 
 /**
@@ -21,6 +21,13 @@ object TimeUtils {
     new Date(ts - (ts % (bucketSizeInMinutes * 60000)))
   }
 
+  def getMonthBucketTsFrom(datetime: Date, bucketSizeInMinutes: Int): Date = {
+    val cal = Calendar.getInstance()
+    cal.setTime(datetime)
+    cal.set(Calendar.DAY_OF_MONTH, cal.getActualMaximum(Calendar.DAY_OF_MONTH));
+    cal.getTime
+  }
+
   def getTsFrom(datetime: String): Date = {
     new SimpleDateFormat(formatTmp).parse(datetime)
   }
@@ -31,6 +38,20 @@ object TimeUtils {
 
   def formatDate(datetime:Date, formatTmp: String):String = {
     new SimpleDateFormat(formatTmp).format(datetime)
+  }
+
+  def getDayBefore(day: Date): Date = {
+    val cal = Calendar.getInstance()
+    cal.setTime(day)
+    cal.add(Calendar.HOUR, -24)
+    cal.getTime
+  }
+
+  def getDayAfter(day: Date): Date = {
+    val cal = Calendar.getInstance()
+    cal.setTime(day)
+    cal.add(Calendar.HOUR, 24)
+    cal.getTime
   }
 
 }
